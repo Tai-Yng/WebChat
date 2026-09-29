@@ -3,6 +3,7 @@
 using System;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 
 namespace WebChat.App;
@@ -38,6 +39,21 @@ public partial class App : Application
         var trayIcon = new System.Drawing.Icon(iconStream);
 
         boot.Step("creating main window");
+        DispatcherUnhandledException += (_, args) =>
+        {
+            boot.Step("UI THREAD EXCEPTION: " + args.Exception.GetType().Name + ": " + args.Exception.Message);
+            args.Handled = true; // keep the chat session alive
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            var ex = args.ExceptionObject as Exception;
+            boot.Step("UNHANDLED: " + (ex?.GetType().Name + ": " + ex?.Message ?? args.ExceptionObject?.ToString() ?? "unknown"));
+        };
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            boot.Step("UNOBSERVED TASK: " + args.Exception.GetBaseException().Message);
+            args.SetObserved();
+        };
         _mainWindow = new MainWindow(DeepSeekUrl, trayIcon);
         _mainWindow.HideToTrayRequested += () => ShutdownMode = ShutdownMode.OnExplicitShutdown;
         _mainWindow.Show();

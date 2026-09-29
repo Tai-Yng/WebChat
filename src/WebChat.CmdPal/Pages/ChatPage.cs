@@ -150,10 +150,12 @@ public sealed partial class ChatPage : DynamicListPage
                     _pipeOk = true;
                     _pipeProbed = true;
                 }
+                ProbeLog("ok, history=" + history.Count);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 lock (_gate) _pipeOk = false;
+                ProbeLog("FAIL " + ex.GetType().Name + ": " + ex.Message);
             }
             finally
             {
@@ -161,6 +163,23 @@ public sealed partial class ChatPage : DynamicListPage
                 RaiseItemsChanged(0);
             }
         });
+    }
+
+    /// <summary>Probe diagnostics land in the package's LocalState so they are readable from outside.</summary>
+    private static void ProbeLog(string message)
+    {
+        try
+        {
+            var dir = Windows.Storage.ApplicationData.Current.LocalFolder.Path;
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(dir, "probe.log"),
+                $"{DateTime.Now:HH:mm:ss.fff} {message}\n");
+        }
+        catch
+        {
+            // diagnostics are best-effort
+        }
     }
 
     internal bool BeginSend(string text)
