@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test tests/WebChat.Tests/WebChat.Tests.csproj
+
+      - name: Detect version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          "VERSION=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Build WebChat.App MSIX (WPF + WebView2)
+        shell: pwsh
+        run: >
+          dotnet build src/WebChat.App/WebChat.App.csproj
+          -p:Platform=x64 -p:Configuration=Release -p:RuntimeIdentifier=win-x64
+          -p:SelfContained=true -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxPackageSigningEnabled=false
+          -p:GenerateAppxPackageOnBuild=true -p:AppxPackageDir="outpkg-app/"
+          "-p:AppxPackageVersion=${{ steps.version.outputs.VERSION }}.0"
+          "-p:AppxPackageIdentityName=TaiYng.WebChat.App"
+          "-p:AppxPackagePublisher=CN=Tai-Yng"
+
+      - name: Build WebChat.CmdPal MSIX
+        shell: pwsh
+        run: >
+          dotnet build src/WebChat.CmdPal/WebChat.CmdPal.csproj
+          -p:Platform=x64 -p:Configuration=Release -p:RuntimeIdentifier=win-x64
+          -p:SelfContained=true -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxPackageSigningEnabled=false
+          -p:GenerateAppxPackageOnBuild=true -p:AppxPackageDir="outpkg-cmdpal/"
+          "-p:AppxPackageVersion=${{ steps.version.outputs.VERSION }}.0"
+          "-p:AppxPackageIdentityName=TaiYng.WebChat.CmdPal"
+          "-p:AppxPackagePublisher=CN=Tai-Yng"
+
+      # Stable self-signed cert via repo secrets:
+      #   WEBCHAT_PFX_B64 / WEBCHAT_PFX_PASS
+      # Without the secret the release ships unsigned msix files.
+      - name: Sign MSIX and export public cert
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.WEBCHAT_PFX_B64 }}
+          PFX_PASS: ${{ secrets.WEBCHAT_PFX_PASS }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:PFX_B64)) {
+            Write-Output "WEBCHAT_PFX_B64 not set; releasing unsigned msix."
+            exit 0
+          }
+          [IO.File]::WriteAllBytes("webchat-sign.pfx", [Convert]::FromBase64String($env:PFX_B64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1 -ExpandProperty FullName
+          foreach ($msix in (Get-ChildItem . -Recurse -Filter *.msix | Where-Object { $_.FullName -notmatch '\\staging\\' })) {
+            & $signtool sign /fd SHA256 /f webchat-sign.pfx /p "$env:PFX_PASS" $msix.FullName
+            Write-Output "signed: $($msix.Name) -> $((Get-AuthenticodeSignature $msix.FullName).Status)"
+          }
+          $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            "webchat-sign.pfx", $env:PFX_PASS)
+          $b64 = [Convert]::ToBase64String($cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+          $pem = ("-----BEGIN CERTIFICATE-----`n" + ($b64 -replace '(.{64})', "`$1`n") + "-----END CERTIFICATE-----`n")
+          Out-File -Encoding ascii -InputObject $pem -FilePath webchat-sign.cer
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force staging | Out-Null
+          Get-ChildItem . -Recurse -Filter *.msix | Where-Object { $_.FullName -notmatch '\\staging\\' } |
+            Copy-Item -Destination staging
+          if (Test-Path webchat-sign.cer) { Copy-Item webchat-sign.cer staging/ }
+          $files = Get-ChildItem staging | Select-Object -ExpandProperty FullName
+          ($files | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash, (Split-Path $_ -Leaf) }) |
+            Out-File -Encoding ascii staging/SHA256SUMS.txt
+          Get-ChildItem staging | Select-Object Name
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: staging/*
+          generate_release_notes: true

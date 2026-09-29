@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WebChat.App/WebChat.App.csproj" />
+    <Project Path="src/WebChat.CmdPal/WebChat.CmdPal.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WebChat.Tests/WebChat.Tests.csproj" />
+  </Folder>
+</Solution>
