@@ -178,14 +178,31 @@ public sealed partial class ChatPage : DynamicListPage
         });
     }
 
-    internal bool BeginSend(string text)
+    internal SendResult BeginSend(string text)
     {
         lock (_gate)
         {
-            if (_sending || !_online)
+            // 卡住的发送自动放行：超过回合超时后允许重发。
+            if (_sending && DateTime.UtcNow - _sendStartedAt > TurnTimeout + TimeSpan.FromSeconds(5))
             {
-                return false;
+                _sending = false;
             }
+
+            if (!_probedOnce)
+            {
+                return SendResult.Connecting; // 初始探测还没出结果
+            }
+
+            if (_sending)
+            {
+                return SendResult.Busy;
+            }
+
+            if (!_online)
+            {
+                return SendResult.Offline;
+            }
+
             _sending = true;
             _sendStartedAt = DateTime.UtcNow;
             _history.Add(new ChatMessage(ChatMessage.User, text, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
@@ -205,8 +222,17 @@ public sealed partial class ChatPage : DynamicListPage
 
         StartFastPolling();
         RaiseItemsChanged(0);
-        return true;
+        return SendResult.Started;
     }
+
+    internal enum SendResult
+    {
+        Started,
+        Connecting,
+        Busy,
+        Offline,
+    }
+
 
     internal bool BeginClear()
     {
@@ -252,4 +278,12 @@ public sealed partial class ChatPage : DynamicListPage
 
     internal static string FormatTime(long unixMs) =>
         DateTimeOffset.FromUnixTimeMilliseconds(unixMs).LocalDateTime.ToString("HH:mm");
+}
+
+internal enum SendResult
+{
+    Started,
+    Connecting,
+    Busy,
+    Offline,
 }

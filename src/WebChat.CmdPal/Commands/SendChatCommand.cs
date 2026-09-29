@@ -26,10 +26,18 @@ public sealed partial class SendChatCommand : InvokableCommand
 
     public override CommandResult Invoke()
     {
-        var accepted = _page.BeginSend(_text);
+        var result = _page.BeginSend(_text);
+        var message = result switch
+        {
+            ChatPage.SendResult.Started => "已发送，回复生成中…",
+            ChatPage.SendResult.Connecting => "正在连接 WebChat…（1-2 秒后再按一次 Enter）",
+            ChatPage.SendResult.Busy => "上一条回复还在生成中，稍候再发",
+            ChatPage.SendResult.Offline => "WebChat 未运行，请先点列表里的启动项",
+            _ => "未知状态",
+        };
         return CommandResult.ShowToast(new ToastArgs
         {
-            Message = accepted ? "已发送，回复生成中…" : "WebChat 正忙或未运行",
+            Message = message,
             Result = CommandResult.Dismiss(),
         });
     }
