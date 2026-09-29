@@ -29,14 +29,27 @@ public partial class MainWindow : Window
 
     private async Task InitializeWebAsync()
     {
+        var boot = BootLog.Instance;
+
         // Dedicated user-data folder: logging in once here persists independently
         // of any browser profile cleanup.
         var userDataFolder = System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WebChat", "WebView2");
+        boot.Step("userdata: " + userDataFolder);
 
-        var environment = await CoreWebView2Environment.CreateAsync(
-            userDataFolder: userDataFolder, options: new CoreWebView2EnvironmentOptions());
-        await Web.EnsureCoreWebView2Async(environment);
+        try
+        {
+            var environment = await CoreWebView2Environment.CreateAsync(
+                userDataFolder: userDataFolder, options: new CoreWebView2EnvironmentOptions());
+            boot.Step("environment created");
+            await Web.EnsureCoreWebView2Async(environment);
+            boot.Step("webview ready");
+        }
+        catch (Exception ex)
+        {
+            boot.Step("webview FAILED: " + ex.Message);
+            throw;
+        }
 
         Web.CoreWebView2.DocumentTitleChanged += (_, _) =>
         {
@@ -44,13 +57,24 @@ public partial class MainWindow : Window
             TitleText.Text = Title.Length > 0 ? $"WebChat · {Title}" : "WebChat";
         };
         Web.Source = new Uri(_startUrl);
+        boot.Step("navigating: " + _startUrl);
 
         // Chat stack: DOM bridge + conversation log + local pipe server for the CmdPal UI.
-        var localState = Windows.Storage.ApplicationData.Current.LocalFolder.Path;
-        var chat = new ChatService(
-            new DeepSeekBridge(Web),
-            new ChatLog(System.IO.Path.Combine(localState, "chat-history.json")));
-        new ChatPipeServer(chat).Start();
+        try
+        {
+            var localState = Windows.Storage.ApplicationData.Current.LocalFolder.Path;
+            boot.Step("localstate: " + localState);
+            var chat = new ChatService(
+                new DeepSeekBridge(Web),
+                new ChatLog(System.IO.Path.Combine(localState, "chat-history.json")));
+            boot.Step("chat service created");
+            new ChatTcpServer(chat, ChatWire.WriteToken()).Start();
+            boot.Step("chat tcp server started");
+        }
+        catch (Exception ex)
+        {
+            boot.Step("chat stack FAILED: " + ex.Message);
+        }
     }
 
     public void TogglePin() => Topmost = !Topmost;

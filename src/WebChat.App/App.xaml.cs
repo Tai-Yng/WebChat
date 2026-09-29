@@ -19,10 +19,13 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        var boot = BootLog.Instance;
+        boot.Step("startup begin");
 
         _singleInstanceMutex = new Mutex(true, @"Local\WebChat.SingleInstance", out var createdNew);
         _activateSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\WebChat.Activate");
 
+        boot.Step("mutex createdNew=" + createdNew);
         if (!createdNew)
         {
             // A second launch (e.g. from the CmdPal command) just wakes the first window.
@@ -34,6 +37,7 @@ public partial class App : Application
         var iconStream = GetResourceStream(new Uri("pack://application:,,,/app.ico")).Stream;
         var trayIcon = new System.Drawing.Icon(iconStream);
 
+        boot.Step("creating main window");
         _mainWindow = new MainWindow(DeepSeekUrl, trayIcon);
         _mainWindow.HideToTrayRequested += () => ShutdownMode = ShutdownMode.OnExplicitShutdown;
         _mainWindow.Show();
@@ -55,6 +59,43 @@ public partial class App : Application
     {
         _singleInstanceMutex?.Dispose();
         base.OnExit(e);
+    }
+}
+
+/// <summary>Best-effort startup trace so silent boot failures can be diagnosed.</summary>
+public sealed class BootLog
+{
+    private static readonly object Gate = new();
+    private static BootLog? _instance;
+    private readonly string _path;
+
+    private BootLog()
+    {
+        var dir = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WebChat");
+        System.IO.Directory.CreateDirectory(dir);
+        _path = System.IO.Path.Combine(dir, "boot.log");
+        System.IO.File.AppendAllText(_path, $"\n=== boot {DateTime.Now:HH:mm:ss.fff} pid={Environment.ProcessId} ===\n");
+    }
+
+    public static BootLog Instance
+    {
+        get
+        {
+            lock (Gate) return _instance ??= new BootLog();
+        }
+    }
+
+    public void Step(string message)
+    {
+        try
+        {
+            lock (Gate) System.IO.File.AppendAllText(_path, $"{DateTime.Now:HH:mm:ss.fff} {message}\n");
+        }
+        catch
+        {
+            // never let logging kill the app
+        }
     }
 }
 

@@ -37,7 +37,7 @@ public sealed class DeepSeekBridge
             },
             send: (text) => {
               const ta = document.querySelector('#chat-input');
-              if (!ta) return 'no-input';
+              if (!ta) return location.pathname.includes('sign_in') ? 'not-logged-in' : 'no-input';
               ta.focus();
               if (ta instanceof HTMLTextAreaElement) {
                 const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
@@ -84,7 +84,12 @@ public sealed class DeepSeekBridge
         }
 
         var result = await Eval(AdapterScript);
-        return result.Contains("\"ok\"");
+        var ok = result.Contains("\"ok\"");
+        if (!ok)
+        {
+            BootLog.Instance.Step("adapter inject -> " + (result.Length > 80 ? result[..80] : result));
+        }
+        return ok;
     }
 
     public async Task<int> AnswerCountAsync()
@@ -124,7 +129,21 @@ public sealed class DeepSeekBridge
 
         var encoded = JsonSerializer.Serialize(text);
         var result = await Eval($"window.__wc.send({encoded})");
+        BootLog.Instance.Step("send() -> " + (result.Length > 60 ? result[..60] : result));
         return result.Contains("sent");
+    }
+
+    /// <summary>Current page path (for login-state hints).</summary>
+    public async Task<string> CurrentPathAsync()
+    {
+        try
+        {
+            return await Eval("location.pathname");
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     private async Task<string> Eval(string script)
@@ -133,7 +152,21 @@ public sealed class DeepSeekBridge
         // background threads (pipe server / chat polling loop).
         var json = await _dispatcher.InvokeAsync(
             () => _web.CoreWebView2.ExecuteScriptAsync(script)).Task.Unwrap();
-        return JsonSerializer.Deserialize<string>(json) ?? string.Empty;
+
+        // The result is the JSON encoding of the script's completion value. When that
+        // value is a string, unwrap it; otherwise pass the raw JSON through (numbers
+        // from count()/generating() etc.). Never assume the shape.
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.String
+                ? doc.RootElement.GetString() ?? string.Empty
+                : json;
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
     }
 
     private async Task<int> EvalInt(string script) =>
@@ -141,7 +174,7 @@ public sealed class DeepSeekBridge
 
     private async Task<string> EvalString(string script)
     {
-        var json = await _web.CoreWebView2.ExecuteScriptAsync(script);
+        var json = await Eval(script);
         try
         {
             return JsonSerializer.Deserialize<string>(json) ?? string.Empty;

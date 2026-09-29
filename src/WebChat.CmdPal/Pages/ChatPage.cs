@@ -41,7 +41,7 @@ public sealed partial class ChatPage : DynamicListPage
         {
             try
             {
-                var history = await ChatPipeClient.HistoryAsync(CancellationToken.None);
+                var history = await ChatTcpClient.HistoryAsync(CancellationToken.None);
                 lock (_gate)
                 {
                     _history.Clear();
@@ -153,7 +153,7 @@ public sealed partial class ChatPage : DynamicListPage
         {
             try
             {
-                await ChatPipeClient.SendAsync(text, (full, done) =>
+                await ChatTcpClient.SendAsync(text, (full, done) =>
                 {
                     lock (_gate) _stream = full;
                     if (done)
@@ -163,7 +163,7 @@ public sealed partial class ChatPage : DynamicListPage
                 }, CancellationToken.None);
 
                 // Pull the finalized history (user + assistant entries) from the App.
-                var history = await ChatPipeClient.HistoryAsync(CancellationToken.None);
+                var history = await ChatTcpClient.HistoryAsync(CancellationToken.None);
                 lock (_gate)
                 {
                     _history.Clear();
@@ -198,7 +198,7 @@ public sealed partial class ChatPage : DynamicListPage
         {
             _ = Task.Run(async () =>
             {
-                await ChatPipeClient.ClearAsync(CancellationToken.None);
+                await ChatTcpClient.ClearAsync(CancellationToken.None);
                 lock (_gate) _history.Clear();
                 RaiseItemsChanged(0);
             });

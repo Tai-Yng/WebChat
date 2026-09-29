@@ -20,6 +20,7 @@ public sealed class ChatService
 
     private readonly DeepSeekBridge _bridge;
     private readonly ChatLog _log;
+    private Action<string, bool>? _currentDelta;
     private int _busy;
 
     public ChatService(DeepSeekBridge bridge, ChatLog log)
@@ -43,9 +44,11 @@ public sealed class ChatService
             throw new InvalidOperationException("busy");
         }
 
+        _currentDelta = delta;
         try
         {
             _log.Add(ChatMessage.User, text);
+            BootLog.Instance.Step("chat: page-ready wait");
 
             if (!await WaitPageReadyAsync(ct))
             {
@@ -53,10 +56,13 @@ public sealed class ChatService
             }
 
             var baseline = await _bridge.AnswerCountAsync();
+            BootLog.Instance.Step("chat: baseline=" + baseline);
             if (baseline < 0 || !await _bridge.SendAsync(text))
             {
-                return Fail("发送失败（输入框未找到或页面结构变更）");
+                var hint = "请打开 WebChat 窗口登录 DeepSeek 后再试（登录一次长期保持；若已登录则是页面改版，需更新适配器）";
+                return Fail(hint);
             }
+            BootLog.Instance.Step("chat: sent, polling");
 
             var started = DateTimeOffset.UtcNow;
             var last = string.Empty;
@@ -111,6 +117,8 @@ public sealed class ChatService
     private string Fail(string message)
     {
         _log.Add(ChatMessage.Assistant, $"[error] {message}");
+        BootLog.Instance.Step("send failed: " + message);
+        try { _currentDelta?.Invoke($"[error] {message}", true); } catch { }
         return $"[error] {message}";
     }
 
