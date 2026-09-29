@@ -19,10 +19,11 @@ public partial class WebChatCommandsProvider : CommandProvider
         Icon = IconHelpers.FromRelativePath("Assets\\icon.png");
         _commands =
         [
-            new CommandItem(new LaunchWebChatCommand())
+            new CommandItem(new ChatPage())
             {
                 Title = DisplayName,
-                Subtitle = "DeepSeek web chat in a dedicated window",
+                Subtitle = "在调色板里直接对话 DeepSeek（网页会话，免 API token）",
+                MoreCommands = [new CommandContextItem(new LaunchAppCommand())],
             },
         ];
     }

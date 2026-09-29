@@ -3,6 +3,7 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using WebChat.Protocol;
 using Microsoft.Web.WebView2.Core;
 
 namespace WebChat.App;
@@ -43,6 +44,13 @@ public partial class MainWindow : Window
             TitleText.Text = Title.Length > 0 ? $"WebChat · {Title}" : "WebChat";
         };
         Web.Source = new Uri(_startUrl);
+
+        // Chat stack: DOM bridge + conversation log + local pipe server for the CmdPal UI.
+        var localState = Windows.Storage.ApplicationData.Current.LocalFolder.Path;
+        var chat = new ChatService(
+            new DeepSeekBridge(Web),
+            new ChatLog(System.IO.Path.Combine(localState, "chat-history.json")));
+        new ChatPipeServer(chat).Start();
     }
 
     public void TogglePin() => Topmost = !Topmost;

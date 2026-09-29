@@ -16,4 +16,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\WebChat.Protocol\WebChat.Protocol.csproj" />
+  </ItemGroup>
 </Project>

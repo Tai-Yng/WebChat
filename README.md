@@ -2,9 +2,9 @@
 
 Chat with **DeepSeek web** in a dedicated desktop window — no API token needed. You log in once; the window keeps its own browser session (WebView2) independent of your main browser.
 
-- **No API / no token**: renders the real chat.deepseek.com page in an embedded WebView2; your logged-in session persists in a dedicated profile
-- **Command Palette ready**: ships with a PowerToys **Command Palette (CmdPal)** launcher extension — one command summons the window
-- Small vertical window (420×640, resizable), **pin on top**, close-to-tray, single instance (second launch just wakes the window)
+- **Chat inside Command Palette**: type in the palette, Enter on the "Send" item, the answer streams into the list with full Markdown in the details pane — **no API token, uses your logged-in DeepSeek web session**
+- **How it works**: the tray-resident  hosts the real chat.deepseek.com page (WebView2, dedicated profile — log in once); the CmdPal extension talks to it over a local named pipe and drives the page through a DOM adapter (dialect from ChatDeck)
+- The standalone window stays available (pin on top, close-to-tray, single instance)
 - Fully local: no telemetry, the only network traffic is DeepSeek itself
 
 This repo contains two packaged apps:

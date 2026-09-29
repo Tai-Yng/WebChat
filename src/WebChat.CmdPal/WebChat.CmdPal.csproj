@@ -45,4 +45,8 @@
   </PropertyGroup>
 
   <ItemGroup />
+
+  <ItemGroup>
+    <ProjectReference Include="..\WebChat.Protocol\WebChat.Protocol.csproj" />
+  </ItemGroup>
 </Project>

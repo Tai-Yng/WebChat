@@ -2,6 +2,9 @@
   <Folder Name="/src/">
     <Project Path="src/WebChat.App/WebChat.App.csproj" />
     <Project Path="src/WebChat.CmdPal/WebChat.CmdPal.csproj" />
+    <Project Path="src/WebChat.Protocol/WebChat.Protocol.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/WebChat.Tests/WebChat.Tests.csproj" />
