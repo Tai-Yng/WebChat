@@ -30,7 +30,7 @@ public sealed partial class SendChatCommand : InvokableCommand
         var message = result switch
         {
             ChatPage.SendResult.Started => "已发送，回复生成中…",
-            ChatPage.SendResult.Connecting => "正在连接 WebChat…（1-2 秒后再按一次 Enter）",
+            ChatPage.SendResult.Connecting => "正在连接 WebChat…连上后这条消息会自动发送",
             ChatPage.SendResult.Busy => "上一条回复还在生成中，稍候再发",
             ChatPage.SendResult.Offline => "WebChat 未运行，请先点列表里的启动项",
             _ => "未知状态",

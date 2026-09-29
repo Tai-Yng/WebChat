@@ -11,7 +11,7 @@
   <Identity
     Name="TaiYng.WebChat.CmdPal"
     Publisher="CN=Tai-Yng"
-    Version="0.2.3.1" />
+    Version="0.2.3.2" />
 
   <Properties>
     <DisplayName>WebChat Launcher</DisplayName>

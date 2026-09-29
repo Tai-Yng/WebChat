@@ -30,6 +30,7 @@ public sealed partial class ChatPage : DynamicListPage
     private bool _probedOnce;
     private bool _sending;         // a send was requested; waiting for the reply
     private DateTime _sendStartedAt;
+    private string _pendingAutoSend = string.Empty; // queued while connecting; fires on connect
     private long _lastProbeTicks;
     private int _probing;
     private System.Threading.Timer? _pollTimer;
@@ -153,6 +154,7 @@ public sealed partial class ChatPage : DynamicListPage
             {
                 var history = await ChatTcpClient.HistoryAsync(CancellationToken.None);
                 bool turnJustCompleted;
+                string? autoSend = null;
                 lock (_gate)
                 {
                     turnJustCompleted = _sending && history.Count > 0 && history[^1].Role == ChatMessage.Assistant;
@@ -164,6 +166,15 @@ public sealed partial class ChatPage : DynamicListPage
                     {
                         _sending = false;
                     }
+                    if (_pendingAutoSend.Length > 0)
+                    {
+                        autoSend = _pendingAutoSend;
+                        _pendingAutoSend = string.Empty;
+                    }
+                }
+                if (autoSend is not null)
+                {
+                    BeginSend(autoSend); // App 上线，补发排队中的消息
                 }
             }
             catch (Exception)
@@ -188,19 +199,16 @@ public sealed partial class ChatPage : DynamicListPage
                 _sending = false;
             }
 
-            if (!_probedOnce)
+            if (!_probedOnce || !_online)
             {
-                return SendResult.Connecting; // 初始探测还没出结果
+                // 初始探测未完成或 App 暂时离线：入队，连上后自动补发。
+                _pendingAutoSend = text;
+                return SendResult.Connecting;
             }
 
             if (_sending)
             {
                 return SendResult.Busy;
-            }
-
-            if (!_online)
-            {
-                return SendResult.Offline;
             }
 
             _sending = true;
