@@ -27,6 +27,8 @@ public sealed partial class ChatPage : DynamicListPage
     private bool _pipeOk;
     private bool _generating;
     private string _stream = string.Empty;
+    private long _lastProbeTicks;
+    private int _probing;
     private System.Threading.Timer? _refreshTimer;
 
     public ChatPage()
@@ -37,25 +39,7 @@ public sealed partial class ChatPage : DynamicListPage
         PlaceholderText = "输入要发送给 DeepSeek 的消息…";
         ShowDetails = true;
 
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var history = await ChatTcpClient.HistoryAsync(CancellationToken.None);
-                lock (_gate)
-                {
-                    _history.Clear();
-                    _history.AddRange(history);
-                    _pipeOk = true;
-                }
-            }
-            catch (Exception)
-            {
-                lock (_gate) _pipeOk = false;
-            }
-            _pipeProbed = true;
-            RaiseItemsChanged(0);
-        });
+        TryProbe();
     }
 
     public override void UpdateSearchText(string oldSearch, string newSearch)
@@ -82,10 +66,11 @@ public sealed partial class ChatPage : DynamicListPage
 
         if (loaded && !pipeOk)
         {
+            TryProbe(); // self-heal: the App may have started since the last attempt
             items.Add(new ListItem(new LaunchAppCommand())
             {
-                Title = "WebChat 未运行",
-                Subtitle = "点这里启动窗口（登录一次后常驻托盘），启动后再回来对话",
+                Title = "WebChat 未运行（正在自动重连…）",
+                Subtitle = "点这里手动启动窗口；窗口登录 DeepSeek 一次即可长期对话",
             });
             return items.ToArray();
         }
@@ -135,6 +120,47 @@ public sealed partial class ChatPage : DynamicListPage
         }
 
         return items.ToArray();
+    }
+
+    /// <summary>Re-asks the App for history when offline; throttled to one attempt per 5s.</summary>
+    private void TryProbe()
+    {
+        if (Interlocked.CompareExchange(ref _probing, 1, 0) != 0)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (now - Volatile.Read(ref _lastProbeTicks) < 5000)
+        {
+            Interlocked.Exchange(ref _probing, 0);
+            return;
+        }
+        Volatile.Write(ref _lastProbeTicks, now);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var history = await ChatTcpClient.HistoryAsync(CancellationToken.None);
+                lock (_gate)
+                {
+                    _history.Clear();
+                    _history.AddRange(history);
+                    _pipeOk = true;
+                    _pipeProbed = true;
+                }
+            }
+            catch (Exception)
+            {
+                lock (_gate) _pipeOk = false;
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _probing, 0);
+                RaiseItemsChanged(0);
+            }
+        });
     }
 
     internal bool BeginSend(string text)
