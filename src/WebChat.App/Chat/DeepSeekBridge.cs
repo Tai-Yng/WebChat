@@ -27,20 +27,40 @@ public sealed class DeepSeekBridge
             !(typeof b.className === 'string' && b.className.includes('ds-button--disabled')));
           window.__wc = {
             count: () => document.querySelectorAll('.ds-message:has(> .ds-markdown)').length,
+            // 2026-09-29：发送后页面会跳转会话页并重建 DOM，计数基线会错位；
+            // 改为直接取最后一个 markdown 块（流式期间它就是正在生长的回复）。
             last: () => {
-              const els = document.querySelectorAll('.ds-message:has(> .ds-markdown)');
-              return els.length ? contentOf(els[els.length - 1]) : '';
+              const mds = document.querySelectorAll('.ds-markdown');
+              return mds.length ? mds[mds.length - 1].innerText : '';
             },
             generating: () => {
               const btn = enabledCircle();
               return !!btn;
             },
+            inspect: () => {
+              const allMd = document.querySelectorAll('[class*="markdown"]');
+              const lastMd = allMd.length ? allMd[allMd.length - 1] : null;
+              return JSON.stringify({
+                url: location.href.slice(-50),
+                dsMarkdown: document.querySelectorAll('.ds-markdown').length,
+                dsMessage: document.querySelectorAll('.ds-message').length,
+                anyMarkdown: allMd.length,
+                lastMdClass: lastMd ? String(lastMd.className).slice(0, 140) : '',
+                lastMdText: lastMd ? String(lastMd.innerText || '').slice(0, 200) : '',
+                generatingBtn: (() => { const b = Array.from(document.querySelectorAll('[role="button"]')).find(x => String(x.className).includes('ds-button--circle')); return b ? String(b.className).slice(0, 100) : 'none'; })(),
+              });
+            },
             send: (text) => {
-              const ta = document.querySelector('#chat-input');
+              // 2026-09-29 改版探查：输入框已无 #chat-input，是无 id 的 textarea
+              // （placeholder 含"发送消息"）。选择器按此定位并对旧 id 兜底。
+              const ta = document.querySelector('#chat-input')
+                || Array.from(document.querySelectorAll('textarea')).find(t =>
+                  (t.placeholder || '').includes('发送消息'))
+                || document.querySelector('textarea');
               if (!ta) return location.pathname.includes('sign_in') ? 'not-logged-in' : 'no-input';
               ta.focus();
-              if (ta instanceof HTMLTextAreaElement) {
-                const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+              const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+              if (setter) {
                 setter.call(ta, text);
                 ta.dispatchEvent(new Event('input', { bubbles: true }));
               } else {
@@ -53,9 +73,12 @@ public sealed class DeepSeekBridge
                 document.execCommand('insertText', false, text);
               }
               const btn = enabledCircle();
-              if (!btn) return 'no-button';
-              btn.click();
-              return 'sent';
+              if (btn) { btn.click(); return 'sent'; }
+              // 改版后发送按钮可能不再匹配 ds-button--circle：按 Enter 兜底
+              const opts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true };
+              ta.dispatchEvent(new KeyboardEvent('keydown', opts));
+              ta.dispatchEvent(new KeyboardEvent('keyup', opts));
+              return 'sent-enter';
             },
           };
           return JSON.stringify({ok: true});
@@ -131,6 +154,16 @@ public sealed class DeepSeekBridge
         var result = await Eval($"window.__wc.send({encoded})");
         BootLog.Instance.Step("send() -> " + (result.Length > 60 ? result[..60] : result));
         return result.Contains("sent");
+    }
+
+    /// <summary>Dumps candidate input elements so selector drift can be diagnosed remotely.</summary>
+    public async Task<string> InspectAsync()
+    {
+        if (!await EnsureInjectedAsync())
+        {
+            return "not-ready";
+        }
+        return await Eval("window.__wc.inspect()");
     }
 
     /// <summary>Current page path (for login-state hints).</summary>

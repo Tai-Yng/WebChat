@@ -9,7 +9,7 @@
   <Identity
     Name="TaiYng.WebChat.App"
     Publisher="CN=Tai-Yng"
-    Version="0.2.2.0" />
+    Version="0.2.3.2" />
 
   <Properties>
     <DisplayName>WebChat</DisplayName>

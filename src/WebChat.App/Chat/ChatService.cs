@@ -55,9 +55,8 @@ public sealed class ChatService
                 return Fail("DeepSeek 页面未就绪（请先打开 WebChat 窗口并登录）");
             }
 
-            var baseline = await _bridge.AnswerCountAsync();
-            BootLog.Instance.Step("chat: baseline=" + baseline);
-            if (baseline < 0 || !await _bridge.SendAsync(text))
+            BootLog.Instance.Step("chat: pre-send");
+            if (!await _bridge.SendAsync(text))
             {
                 var hint = "请打开 WebChat 窗口登录 DeepSeek 后再试（登录一次长期保持；若已登录则是页面改版，需更新适配器）";
                 return Fail(hint);
@@ -67,6 +66,7 @@ public sealed class ChatService
             var started = DateTimeOffset.UtcNow;
             var last = string.Empty;
             var stable = 0;
+            var sawContent = false;
 
             while (true)
             {
@@ -77,22 +77,49 @@ public sealed class ChatService
                 }
 
                 await Task.Delay(PollMs, ct);
-                var count = await _bridge.AnswerCountAsync();
-                var current = count > baseline ? await _bridge.LastAnswerAsync() : string.Empty;
-                var generating = await _bridge.IsGeneratingAsync();
-
-                if (current.Length != last.Length)
+                // Poll via InspectAsync — its data path is proven reliable end-to-end.
+                System.Text.Json.JsonDocument? snapshot = null;
+                try
                 {
-                    last = current;
-                    stable = 0;
-                    delta?.Invoke(current, false);
+                    snapshot = System.Text.Json.JsonDocument.Parse(await _bridge.InspectAsync());
                 }
-                else
+                catch (System.Text.Json.JsonException)
                 {
-                    stable++;
+                    continue;
                 }
 
-                if (count > baseline && !generating && stable >= 2)
+                using (snapshot)
+                {
+                    var root = snapshot.RootElement;
+                    var current = root.TryGetProperty("lastMdText", out var t) ? t.GetString() ?? "" : "";
+                    var generatingRaw = root.TryGetProperty("generatingBtn", out var g) ? g.GetString() ?? "" : "";
+                    var generating = !generatingRaw.Contains("ds-button--disabled");
+
+                    if (current.Length > 0)
+                    {
+                        sawContent = true;
+                    }
+
+                    if (current.Length != last.Length)
+                    {
+                        last = current;
+                        stable = 0;
+                        delta?.Invoke(current, false);
+                    }
+                    else
+                    {
+                        stable++;
+                    }
+
+                    // 完成判定以文本稳定性为准（2026-09-29 改版后发送按钮不再带
+                    // ds-button--disabled，generating 信号不可依赖）。
+                    if (sawContent && stable >= 5)
+                    {
+                        _log.Add(ChatMessage.Assistant, last);
+                        delta?.Invoke(last, true);
+                        return last;
+                    }
+                }
                 {
                     _log.Add(ChatMessage.Assistant, last);
                     delta?.Invoke(last, true);

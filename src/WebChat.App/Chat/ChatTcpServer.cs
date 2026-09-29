@@ -20,11 +20,13 @@ namespace WebChat.App;
 public sealed class ChatTcpServer
 {
     private readonly ChatService _chat;
+    private readonly DeepSeekBridge _bridge;
     private readonly string _token;
 
-    public ChatTcpServer(ChatService chat, string token)
+    public ChatTcpServer(ChatService chat, DeepSeekBridge bridge, string token)
     {
         _chat = chat;
+        _bridge = bridge;
         _token = token;
     }
 
@@ -100,6 +102,10 @@ public sealed class ChatTcpServer
             {
                 case "history":
                     await writer.WriteLineAsync(ChatProtocol.History(_chat.Messages));
+                    break;
+
+                case "inspect":
+                    await writer.WriteLineAsync(ChatProtocol.Delta(await _bridge.InspectAsync(), true));
                     break;
 
                 case "clear":

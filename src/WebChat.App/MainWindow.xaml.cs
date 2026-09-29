@@ -64,11 +64,12 @@ public partial class MainWindow : Window
         {
             var localState = Windows.Storage.ApplicationData.Current.LocalFolder.Path;
             boot.Step("localstate: " + localState);
+            var bridge = new DeepSeekBridge(Web);
             var chat = new ChatService(
-                new DeepSeekBridge(Web),
+                bridge,
                 new ChatLog(System.IO.Path.Combine(localState, "chat-history.json")));
             boot.Step("chat service created");
-            new ChatTcpServer(chat, ChatWire.WriteToken()).Start();
+            new ChatTcpServer(chat, bridge, ChatWire.WriteToken()).Start();
             boot.Step("chat tcp server started");
         }
         catch (Exception ex)
